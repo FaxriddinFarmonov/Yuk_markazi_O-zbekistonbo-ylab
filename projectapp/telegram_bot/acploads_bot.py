@@ -58,7 +58,7 @@ async def run_client(account):
                     event.media,
                     caption=f"👉 https://t.me/{MY_GROUP}"
                 )
-                print(f"[{account['session']}] Media forward qilindi.")
+                # print(f"[{account['session']}] Media forward qilindi.")
         except Exception as e:
             print(f"[{account['session']}] ❌ Xabar yuborilmadi: {e}")
 
