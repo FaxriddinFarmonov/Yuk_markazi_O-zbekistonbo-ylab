@@ -258,3 +258,4 @@ async def main():
 if __name__ == "__main__":
     print("▶️ Fast forwarder starting (DB yo‘q, to‘g‘ridan-to‘g‘ri forward)...")
     asyncio.run(main())
+# faxriddin
