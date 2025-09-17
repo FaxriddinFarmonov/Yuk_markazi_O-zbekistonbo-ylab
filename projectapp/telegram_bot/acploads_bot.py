@@ -1,425 +1,251 @@
-# # import asyncio
-# # from telethon import TelegramClient, events
-# #
-# # # 🔑 3 ta akkaunt ma’lumotlari
-# # accounts = [
-# #     {
-# #         "session": "acc1",
-# #         "api_id": 21825034,
-# #         "api_hash": "54914cdafa40fbb22d574799c0f38a9e",
-# #         "source_groups": ["yuk_markazi_gruppaaaa", "yukmarkazi_isuzuchilar"]
-# #     },
-# #     {
-# #         "session": "acc2",
-# #         "api_id": 27622829,
-# #         "api_hash": "070517eac99ddbdcbdbc6ef3113a120b",
-# #         "source_groups": ["Yuk_markazi_yukmarkazi", "YUK_MARKAZI_XIZMATI"]
-# #     },
-# #     {
-# #         "session": "acc3",
-# #         "api_id": 28796243,
-# #         "api_hash": "59915e8540fed369e2b1d633c1a7c82d",
-# #         "source_groups": ["Surxondaryoyukmarkazi"]
-# #     },
-# # ]
-# #
-# # # 🏠 Forward qilinadigan guruh username
-# # MY_GROUP = "yukmarkazi_isuzular"
-# #
-# # # ❌ Filtrlash uchun botlar / usernamelar
-# # BLOCKED_SENDERS = ["Majbur_bot", "tg_botlar"]
-# #
-# #
-# # async def run_client(account):
-# #     client = TelegramClient(account["session"], account["api_id"], account["api_hash"])
-# #
-# #     await client.start()
-# #     # 🔑 Guruhni entity sifatida olish
-# #     my_group_entity = await client.get_entity(MY_GROUP)
-# #
-# #     @client.on(events.NewMessage(chats=account["source_groups"]))
-# #     async def handler(event):
-# #         sender = await event.get_sender()
-# #         username = sender.username if sender else None
-# #
-# #         if username and username in BLOCKED_SENDERS:
-# #             return
-# #
-# #         try:
-# #             if event.raw_text:
-# #                 await client.send_message(
-# #                     my_group_entity,
-# #                     f"{event.raw_text}\n\n👉 https://t.me/{MY_GROUP}"
-# #                 )
-# #                 print(f"[{account['session']}] Matn forward qilindi: {event.raw_text[:40]}")
-# #             elif event.media:
-# #                 await client.send_file(
-# #                     my_group_entity,
-# #                     event.media,
-# #                     caption=f"👉 https://t.me/{MY_GROUP}"
-# #                 )
-# #                 # print(f"[{account['session']}] Media forward qilindi.")
-# #         except Exception as e:
-# #             print(f"[{account['session']}] ❌ Xabar yuborilmadi: {e}")
-# #
-# #     print(f"✅ {account['session']} ishga tushdi. Guruhlar: {account['source_groups']}")
-# #     await client.run_until_disconnected()
-# #
-# #
-# # async def main():
-# #     tasks = [run_client(acc) for acc in accounts]
-# #     await asyncio.gather(*tasks)
-# #
-# #
-# # if __name__ == "__main__":
-# #     print("🚀 Bot parallel ishlayapti...")
-# #     asyncio.run(main())
-# # # fgjhfggjfgjfjfgbdfbdfdx
-#
-#
-#
-# # forwarder_filtered.py
-# import re
+
+
+# # optimized_forwarder_with_source_log.py
 # import asyncio
+# import sqlite3
+# import time
+# import random
 # from telethon import TelegramClient, events
-# from telethon.errors import FloodWaitError
+# from telethon.errors import FloodWaitError, RPCError
 #
-# # --------------------
-# # 3 ta akkaunt + ularning guruhlari
 # accounts = [
-#     {
-#         "session": "acc1",
-#         "api_id": 21825034,
-#         "api_hash": "54914cdafa40fbb22d574799c0f38a9e",
-#         "source_groups": ["yuk_markazi_gruppaaaa", "yukmarkazi_isuzuchilar"]
-#     },
-#     {
-#         "session": "acc2",
-#         "api_id": 27622829,
-#         "api_hash": "070517eac99ddbdcbdbc6ef3113a120b",
-#         "source_groups": ["Yuk_markazi_yukmarkazi", "YUK_MARKAZI_XIZMATI"]
-#     },
-#     {
-#         "session": "acc3",
-#         "api_id": 28796243,
-#         "api_hash": "59915e8540fed369e2b1d633c1a7c82d",
-#         "source_groups": ["Surxondaryoyukmarkazi", "yuk_markazi_vodiy_yuk_markazi"]
-#     },
+#     {"session": "acc1", "api_id": 21825034, "api_hash": "54914cdafa40f...", "source_groups": ["yuk_markazi_gruppaaaa","YUK_MARKAZI_XIZMATI"]},
+#     {"session": "acc2", "api_id": 27622829, "api_hash": "070517eac99d...", "source_groups": ["Yuk_markazi_yukmarkazi","lorry_uzbek"]},  # <-- note: no /1
+#     {"session": "acc3", "api_id": 28796243, "api_hash": "59915e8540fe...", "source_groups": ["Surxondaryoyukmarkazi", "yukmarkazi_isuzuchilar"]},
 # ]
 #
-# # Forward qilinadigan guruh (username)
 # MY_GROUP = "yukmarkazi_isuzular"
-#
-# # Keraksiz yuboruvchilar / botlar
 # BLOCKED_SENDERS = {"Majbur_bot", "tg_botlar"}
 #
-# # Nomaqbul so'zlar (kichik harfga o'girib tekshiriladi)
-# BANNED_WORDS = [
-#     "sex", "seks", "online kayf", "porno", "escort", "seks", "erotic", "yopildi",
-#     "licga", "lic", "kayf", "seks", "mast", "trav", "escort"
-# ]
-#
-# # Telefon raqamni aniqlovchi regexlar (bularni tarzda kengaytirish mumkin)
-# PHONE_REGEX = re.compile(
-#     r"(\+998\d{9}|\+7\d{10}|\+\d{6,15}|\b0\d{8,10}\b)"
-#     , flags=re.IGNORECASE
+# account_semaphores = {}
+# DB_FILE = "forwarder.db"
+# conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+# cur = conn.cursor()
+# cur.execute('''
+# CREATE TABLE IF NOT EXISTS messages (
+#   id INTEGER PRIMARY KEY AUTOINCREMENT,
+#   chat_id TEXT,
+#   msg_id TEXT,
+#   sender TEXT,
+#   text TEXT,
+#   media INTEGER DEFAULT 0,
+#   forwarded INTEGER DEFAULT 0,
+#   created_at REAL
 # )
+# ''')
+# conn.commit()
 #
-# # Kanal/kanal-preview yoki "VIEW GROUP" kabi avtomatik bloklovchi so'zlar
-# BLOCK_PREVIEWS = ["view group", "view channel", "telegram", "view group", "view channel"]
-#
-# # Delay har bir forwarddan keyin (sekund)
-# AFTER_FORWARD_DELAY = 2
-#
-# # --------------------
-# def text_has_phone(text: str) -> bool:
-#     if not text:
-#         return False
-#     return bool(PHONE_REGEX.search(text))
-#
-#
-# def text_has_banned_word(text: str) -> bool:
-#     if not text:
-#         return False
-#     s = text.lower()
-#     for w in BANNED_WORDS:
-#         if w in s:
-#             return True
-#     for p in BLOCK_PREVIEWS:
-#         if p in s:
-#             return True
-#     # Shuningdek, agar link preview (masalan "VIEW GROUP") yoki kanal tavsifi bo'lsa
-#     if "view group" in s or "view channel" in s:
-#         return True
-#     return False
-#
-#
-# async def run_client(account):
-#     client = TelegramClient(account["session"], account["api_id"], account["api_hash"])
-#     await client.start()
-#     # Entity sifatida MY_GROUP ni oling (username orqali)
-#     try:
-#         my_group_entity = await client.get_entity(MY_GROUP)
-#     except Exception as e:
-#         print(f"[{account['session']}] MY_GROUP entity olinmadi: {e}")
-#         my_group_entity = MY_GROUP  # fallback: username bilan ishlatamiz
-#
-#     source_groups = account.get("source_groups", [])
-#     print(f"[{account['session']}] ishga tushdi. Kuzatiladi: {source_groups}")
-#
-#     @client.on(events.NewMessage(chats=source_groups))
-#     async def handler(event):
+# async def retry_with_backoff(coro_func, *args, max_tries=5, base=1.5):
+#     tries = 0
+#     while tries < max_tries:
 #         try:
-#             # chat haqida ma'lumot
-#             try:
-#                 chat = await event.get_chat()
-#                 chat_title = getattr(chat, "title", None) or getattr(chat, "username", str(event.chat_id))
-#             except:
-#                 chat_title = str(event.chat_id)
+#             return await coro_func(*args)
+#         except FloodWaitError as e:
+#             wait = e.seconds + 1
+#             print(f"[retry] FloodWaitError: kutilyapti {wait}s")
+#             await asyncio.sleep(wait)
+#         except RPCError as e:
+#             tries += 1
+#             wait = base ** tries + random.random()
+#             print(f"[retry] RPCError ({e}). kutilyapti {wait:.1f}s, urinish {tries}/{max_tries}")
+#             await asyncio.sleep(wait)
+#         except Exception as e:
+#             tries += 1
+#             wait = base ** tries + random.random()
+#             print(f"[retry] Other error ({e}). kutilyapti {wait:.1f}s, urinish {tries}/{max_tries}")
+#             await asyncio.sleep(wait)
+#     raise RuntimeError("Max retry attempts reached")
 #
-#             sender = await event.get_sender()
-#             sender_name = (sender.username if sender and sender.username else
-#                            (getattr(sender, "first_name", None) or str(getattr(sender, "id", "unknown"))))
-#
-#             # Agar yuboruvchi block ro'yxatda bo'lsa — o'tkazmaslik
-#             if sender and getattr(sender, "username", None) in BLOCKED_SENDERS:
-#                 # log uchun
-#                 print(f"[{account['session']}] BLOCKED sender {sender.username} dan xabar tashlanmadi.")
-#                 return
-#
-#             text = event.raw_text or ""
-#             # Agar matn yoki caption yo'q va media ham bo'lsa — media bilan qayta ishlaymiz,
-#             # lekin telefonsiz media yuborish shart emas (siz telefonsiz media ham olishni xohlamadingiz)
-#             # Shuning uchun media bo'lsa va captionda telefon bo'lsa forward qilamiz
-#             has_phone = text_has_phone(text)
-#
-#             # Agar matnda nomaqbul so'zlar bo'lsa — tashlamaymiz
-#             if text_has_banned_word(text):
-#                 print(f"[{account['session']}] {chat_title} dan nomaqbul xabar topildi — tashlanmadi.")
-#                 return
-#
-#             # Agar telefon raqami yo'q bo'lsa — tashlamaymiz
-#             if not has_phone:
-#                 # Agar media va caption mavjud bo'lsa, captionni tekshiramiz
-#                 cap = getattr(event.message, "message", "") or ""
-#                 if text_has_phone(cap):
-#                     has_phone = True
-#                 else:
-#                     # Ba'zi hollarda xabar ichida alohida entity (phone) bo'lishi mumkin - qo'shimcha tekshir
-#                     if not has_phone:
-#                         print(f"[{account['session']}] {chat_title} dan xabar TOPILMADI (telefon yo'q) — tashlanmadi.")
-#                         return
-#
-#             # Endi forward/forward-like yuborish
-#             try:
-#                 # Forward qilish (asl yuboruvchini saqlab qoladi)
-#                 # event.forward_to(my_group_entity)  # forward_to ni ishlatish mumkin, lekin ba'zan kerakli caption qo'shish qiyin
-#                 # Biz original matnni yangi xabar sifatida yuboramiz + link qo'shamiz
-#                 if text:
-#                     send_text = f"{text}\n\n📌 Manba: {chat_title}\n📨 Yuborgan: {sender_name}\n\n👉 https://t.me/{MY_GROUP}"
-#                     await client.send_message(my_group_entity, send_text)
-#                 elif event.media:
-#                     # agar media bo'lsa, avval media yuklab yuborib caption bilan
-#                     caption = f"📌 Manba: {chat_title}\n📨 Yuborgan: {sender_name}\n\n👉 https://t.me/{MY_GROUP}"
-#                     await client.send_file(my_group_entity, event.media, caption=caption)
-#
-#                 print(f"[{account['session']}] ✅ {chat_title} dan {sender_name} dan xabar saqlandi va yuborildi.")
-#                 await asyncio.sleep(AFTER_FORWARD_DELAY)
-#
-#             except FloodWaitError as e:
-#                 print(f"[{account['session']}] FloodWait: {e.seconds}s kutilyapti...")
-#                 await asyncio.sleep(e.seconds + 1)
-#
-#         except Exception as exc:
-#             print(f"[{account['session']}] Handler xatosi: {exc}")
-#
-#     await client.run_until_disconnected()
-#
-#
-# async def main():
-#     tasks = [run_client(acc) for acc in accounts]
-#     await asyncio.gather(*tasks)
-#
-#
-# if __name__ == "__main__":
-#     print("▶️ Forwarder ishga tushmoqda...")
-#     asyncio.run(main())
-
-
-#
-# import asyncio
-# from telethon import TelegramClient, events
-# from telethon.errors import FloodWaitError
-#
-# # --------------------
-# # 3 ta akkaunt + ularning guruhlari
-# accounts = [
-#     {
-#         "session": "acc1",
-#         "api_id": 21825034,
-#         "api_hash": "54914cdafa40fbb22d574799c0f38a9e",
-#         "source_groups": ["yuk_markazi_gruppaaaa", "yukmarkazi_isuzuchilar"]
-#     },
-#     {
-#         "session": "acc2",
-#         "api_id": 27622829,
-#         "api_hash": "070517eac99ddbdcbdbc6ef3113a120b",
-#         "source_groups": ["Yuk_markazi_yukmarkazi", "YUK_MARKAZI_XIZMATI"]
-#     },
-#     {
-#         "session": "acc3",
-#         "api_id": 28796243,
-#         "api_hash": "59915e8540fed369e2b1d633c1a7c82d",
-#         "source_groups": ["Surxondaryoyukmarkazi", "yuk_markazi_vodiy_yuk_markazi"]
-#     },
-# ]
-#
-# # Forward qilinadigan guruh (username)
-# MY_GROUP = "yukmarkazi_isuzular"
-#
-# # Keraksiz yuboruvchilar / botlar
-# BLOCKED_SENDERS = {"Majbur_bot", "tg_botlar"}
-#
-# # Delay har bir forwarddan keyin (sekund)
-# AFTER_FORWARD_DELAY = 2
-#
-#
-# async def run_client(account):
-#     client = TelegramClient(account["session"], account["api_id"], account["api_hash"])
-#     await client.start()
-#
-#     # Entity sifatida MY_GROUP ni olish
+# async def forward_message(client, my_group_entity, event, account_name):
+#     # Get chat info (Manba) and sender
 #     try:
-#         my_group_entity = await client.get_entity(MY_GROUP)
-#     except Exception as e:
-#         print(f"[{account['session']}] MY_GROUP entity olinmadi: {e}")
-#         my_group_entity = MY_GROUP
+#         chat = await event.get_chat()
+#         chat_title = getattr(chat, "title", None) or getattr(chat, "username", None) or str(event.chat_id)
+#     except:
+#         chat_title = str(event.chat_id)
 #
-#     source_groups = account.get("source_groups", [])
-#     print(f"[{account['session']}] ishga tushdi. Kuzatiladi: {source_groups}")
+#     try:
+#         sender = await event.get_sender()
+#         sender_name = sender.username if sender and getattr(sender, "username", None) else (getattr(sender, "first_name", "unknown") or str(getattr(sender, "id", "unknown")))
+#     except:
+#         sender_name = "unknown"
 #
-#     @client.on(events.NewMessage(chats=source_groups))
-#     async def handler(event):
-#         try:
-#             sender = await event.get_sender()
-#             sender_name = sender.username if sender and sender.username else "unknown"
+#     text = event.raw_text or ""
+#     media_flag = 1 if event.media else 0
 #
-#             # Agar yuboruvchi block ro'yxatda bo'lsa — o'tkazmaslik
-#             if sender_name in BLOCKED_SENDERS:
-#                 print(f"[{account['session']}] BLOCKED sender {sender_name} dan xabar tashlanmadi.")
-#                 return
+#     cur.execute(
+#         "INSERT INTO messages (chat_id, msg_id, sender, text, media, forwarded, created_at) VALUES (?,?,?,?,?,?,?)",
+#         (str(event.chat_id), str(getattr(event.message, 'id', '')), sender_name, text, media_flag, 0, time.time())
+#     )
+#     conn.commit()
+#     msg_db_id = cur.lastrowid
 #
-#             # Endi forward qilish
+#     # Log source (manba)
+#     print(f"[{account_name}] Manba: {chat_title} | Yuborgan: {sender_name} | Text len: {len(text)}")
+#
+#     sem = account_semaphores[account_name]
+#     async with sem:
+#         async def do_forward():
 #             try:
+#                 await event.forward_to(my_group_entity)
+#                 return "forwarded"
+#             except Exception:
 #                 if event.raw_text:
 #                     await client.send_message(my_group_entity, event.raw_text)
-#                 elif event.media:
-#                     await client.send_file(my_group_entity, event.media, caption=event.message.message or "")
+#                     return "sent_text"
+#                 else:
+#                     raise
 #
-#                 print(f"[{account['session']}] ✅ Xabar yuborildi ({sender_name}).")
-#                 await asyncio.sleep(AFTER_FORWARD_DELAY)
+#         result = await retry_with_backoff(do_forward)
+#         cur.execute("UPDATE messages SET forwarded=1 WHERE id=?", (msg_db_id,))
+#         conn.commit()
+#         print(f"[{account_name}] {result} ({chat_title} -> {MY_GROUP})")
 #
-#             except FloodWaitError as e:
-#                 print(f"[{account['session']}] FloodWait: {e.seconds}s kutilyapti...")
-#                 await asyncio.sleep(e.seconds + 1)
+# async def run_client(account):
+#     name = account["session"]
+#     account_semaphores[name] = asyncio.Semaphore(1)
+#     client = TelegramClient(name, account["api_id"], account["api_hash"])
 #
-#         except Exception as exc:
-#             print(f"[{account['session']}] Handler xatosi: {exc}")
+#     await client.start()
+#     try:
+#         my_group_entity = await client.get_entity(MY_GROUP)
+#     except Exception as e:
+#         print(f"[{name}] MY_GROUP olinmadi: {e}; fallback to username")
+#         my_group_entity = MY_GROUP
+#
+#     groups = account.get("source_groups", [])
+#     print(f"[{name}] ishga tushdi. Kuzatiladi: {groups}")
+#
+#     @client.on(events.NewMessage(chats=groups))
+#     async def handler(event):
+#         # blocked senders
+#         try:
+#             sender = await event.get_sender()
+#             if sender and getattr(sender, "username", None) in BLOCKED_SENDERS:
+#                 print(f"[{name}] BLOCKED sender {sender.username}")
+#                 return
+#         except:
+#             pass
+#
+#         # skip media if you don't want them
+#         if event.media:
+#             print(f"[{name}] media skipped")
+#             return
+#
+#         # start forwarding task immediately
+#         asyncio.create_task(forward_message(client, my_group_entity, event, name))
 #
 #     await client.run_until_disconnected()
-#
 #
 # async def main():
 #     tasks = [run_client(acc) for acc in accounts]
 #     await asyncio.gather(*tasks)
 #
-#
 # if __name__ == "__main__":
-#     print("▶️ Forwarder ishga tushmoqda...")
+#     print("▶️ Optimized forwarder starting...")
 #     asyncio.run(main())
 
 
 import asyncio
+import random
+import re
 from telethon import TelegramClient, events
-from telethon.errors import FloodWaitError
+from telethon.errors import FloodWaitError, RPCError
 
-# --------------------
-# 3 ta akkaunt + ularning guruhlari
 accounts = [
-    {
-        "session": "acc1",
-        "api_id": 21825034,
-        "api_hash": "54914cdafa40fbb22d574799c0f38a9e",
-        "source_groups": ["yuk_markazi_gruppaaaa", "yukmarkazi_isuzuchilar"]
-    },
-    {
-        "session": "acc2",
-        "api_id": 27622829,
-        "api_hash": "070517eac99ddbdcbdbc6ef3113a120b",
-        "source_groups": ["Yuk_markazi_yukmarkazi", "YUK_MARKAZI_XIZMATI"]
-    },
-    {
-        "session": "acc3",
-        "api_id": 28796243,
-        "api_hash": "59915e8540fed369e2b1d633c1a7c82d",
-        "source_groups": ["Surxondaryoyukmarkazi", "yuk_markazi_vodiy_yuk_markazi"]
-    },
+    {"session": "acc1", "api_id": 21825034, "api_hash": "54914cdafa40f...", "source_groups": ["yuk_markazi_gruppaaaa", "YUK_MARKAZI_XIZMATI"]},
+    {"session": "acc2", "api_id": 27622829, "api_hash": "070517eac99d...", "source_groups": ["Yuk_markazi_yukmarkazi", "lorry_uzbek"]},
+    {"session": "acc3", "api_id": 28796243, "api_hash": "59915e8540fe...", "source_groups": ["Surxondaryoyukmarkazi", "yukmarkazi_isuzuchilar"]},
 ]
 
-# Forward qilinadigan guruh (username)
 MY_GROUP = "yukmarkazi_isuzular"
-
-# Keraksiz yuboruvchilar / botlar
 BLOCKED_SENDERS = {"Majbur_bot", "tg_botlar"}
 
-# Delay har bir forwarddan keyin (sekund)
-AFTER_FORWARD_DELAY = 2
+account_semaphores = {}
+
+
+async def retry_with_backoff(coro_func, *args, max_tries=5, base=1.5):
+    tries = 0
+    while tries < max_tries:
+        try:
+            return await coro_func(*args)
+        except FloodWaitError as e:
+            wait = e.seconds + 1
+            print(f"[retry] FloodWaitError: kutilyapti {wait}s")
+            await asyncio.sleep(wait)
+        except RPCError as e:
+            tries += 1
+            wait = base ** tries + random.random()
+            print(f"[retry] RPCError ({e}). kutilyapti {wait:.1f}s, urinish {tries}/{max_tries}")
+            await asyncio.sleep(wait)
+        except Exception as e:
+            tries += 1
+            wait = base ** tries + random.random()
+            print(f"[retry] Other error ({e}). kutilyapti {wait:.1f}s, urinish {tries}/{max_tries}")
+            await asyncio.sleep(wait)
+    raise RuntimeError("Max retry attempts reached")
+
+
+async def forward_message(client, my_group_entity, event, account_name):
+    try:
+        chat = await event.get_chat()
+        chat_title = getattr(chat, "title", None) or getattr(chat, "username", None) or str(event.chat_id)
+    except:
+        chat_title = str(event.chat_id)
+
+    try:
+        sender = await event.get_sender()
+        sender_name = sender.username if sender and getattr(sender, "username", None) else (
+            getattr(sender, "first_name", "unknown") or str(getattr(sender, "id", "unknown"))
+        )
+    except:
+        sender_name = "unknown"
+
+    text = event.raw_text or ""
+    clean_text = re.sub(r'@\w+', '', text).strip()
+
+    print(f"[{account_name}] Manba: {chat_title} | Yuborgan: {sender_name} | Text len: {len(clean_text)}")
+
+    sem = account_semaphores[account_name]
+    async with sem:
+        async def do_forward():
+            if clean_text:
+                await client.send_message(my_group_entity, clean_text)
+                return "sent_clean_text"
+            elif event.media:
+                await event.forward_to(my_group_entity)
+                return "forwarded_media"
+
+        result = await retry_with_backoff(do_forward)
+        print(f"[{account_name}] {result} ({chat_title} -> {MY_GROUP})")
 
 
 async def run_client(account):
-    client = TelegramClient(account["session"], account["api_id"], account["api_hash"])
-    await client.start()
+    name = account["session"]
+    account_semaphores[name] = asyncio.Semaphore(1)
+    client = TelegramClient(name, account["api_id"], account["api_hash"])
 
-    # Entity sifatida MY_GROUP ni olish
+    await client.start()
     try:
         my_group_entity = await client.get_entity(MY_GROUP)
     except Exception as e:
-        print(f"[{account['session']}] MY_GROUP entity olinmadi: {e}")
+        print(f"[{name}] MY_GROUP olinmadi: {e}; fallback to username")
         my_group_entity = MY_GROUP
 
-    source_groups = account.get("source_groups", [])
-    print(f"[{account['session']}] ishga tushdi. Kuzatiladi: {source_groups}")
+    groups = account.get("source_groups", [])
+    print(f"[{name}] ishga tushdi. Kuzatiladi: {groups}")
 
-    @client.on(events.NewMessage(chats=source_groups))
+    @client.on(events.NewMessage(chats=groups))
     async def handler(event):
         try:
             sender = await event.get_sender()
-            sender_name = sender.username if sender and sender.username else "unknown"
-
-            # Agar yuboruvchi block ro'yxatda bo'lsa — o'tkazmaslik
-            if sender_name in BLOCKED_SENDERS:
-                print(f"[{account['session']}] BLOCKED sender {sender_name} dan xabar tashlanmadi.")
+            if sender and getattr(sender, "username", None) in BLOCKED_SENDERS:
+                print(f"[{name}] BLOCKED sender {sender.username}")
                 return
+        except:
+            pass
 
-            # ❌ Media (rasm, video, fayl) tashlanmasin
-            if event.media:
-                print(f"[{account['session']}] ❌ Media xabar tashlanmadi ({sender_name}).")
-                return
-
-            # Endi faqat text forward qilamiz
-            if event.raw_text:
-                send_text = f"{event.raw_text}\n\n📨 Yuborgan: {sender_name}\n\n👉 https://t.me/{MY_GROUP}"
-                await client.send_message(my_group_entity, send_text)
-                print(f"[{account['session']}] ✅ Matn yuborildi ({sender_name}).")
-
-            await asyncio.sleep(AFTER_FORWARD_DELAY)
-
-        except FloodWaitError as e:
-            print(f"[{account['session']}] FloodWait: {e.seconds}s kutilyapti...")
-            await asyncio.sleep(e.seconds + 1)
-
-        except Exception as exc:
-            print(f"[{account['session']}] Handler xatosi: {exc}")
+        asyncio.create_task(forward_message(client, my_group_entity, event, name))
 
     await client.run_until_disconnected()
 
@@ -430,6 +256,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    print("▶️ Forwarder ishga tushmoqda...")
+    print("▶️ Fast forwarder starting (DB yo‘q, to‘g‘ridan-to‘g‘ri forward)...")
     asyncio.run(main())
-  # dcfdsfdsfdsfdsfdsf
