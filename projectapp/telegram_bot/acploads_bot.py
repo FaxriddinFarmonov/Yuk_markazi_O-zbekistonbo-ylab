@@ -11,8 +11,8 @@ from telethon.tl.types import ChannelForbidden
 # ====== MOSLASHTIRING ======
 accounts = [
     {
-        "api_id": 13289212,
-        "api_hash": "a43b3238c55399fb49e5a529eb026342",
+        "api_id": 28796243,
+        "api_hash": "59915e8540fed369e2b1d633c1a7c82d",
         "source_groups": ["yuk_markazi_gruppaaaa", "Surxondaryoyukmarkazi"],
         "session_file": "tg_session.txt",  # 👈 MUHIM
     }
